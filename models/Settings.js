@@ -16,4 +16,5 @@ const settingsSchema = new mongoose.Schema({
   }
 });
 
-module.exports = mongoose.model('Settings', settingsSchema);
+// OverwriteModelError এড়াতে নিরাপদ এক্সপোর্ট
+module.exports = mongoose.models.Settings || mongoose.model('Settings', settingsSchema);
