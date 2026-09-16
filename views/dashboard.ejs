@@ -21,7 +21,7 @@
 
   <div class="card">
     <h3>📊 ওভারভিউ</h3>
-    <p>মোট ইউজার: <strong><%= userCount %></strong> | সক্রিয় অর্ডার: <strong><%= activeNumbers %></strong></p>
+    <p>মোট ইউজার: <strong><%= userCount %></strong> | সক্রিয় ইউজার: <strong><%= activeNumbers %></strong></p>
   </div>
 
   <div class="card">
@@ -35,12 +35,9 @@
   <div class="card">
     <h3>➕ নতুন সার্ভিস / কান্ট্রি / নাম্বার রেঞ্জ যোগ করুন</h3>
     <form action="/admin/service/add" method="POST">
-      <input type="text" name="name" placeholder="সার্ভিসের নাম (e.g. Facebook)" required />
-      <input type="text" name="categoryKey" placeholder="ক্যাটাগরি কি (e.g. facebook)" required />
       <input type="text" name="country" placeholder="কান্ট্রির নাম (e.g. USA)" required />
-      <input type="text" name="countryCode" placeholder="কোড (e.g. usa)" required />
-      <input type="text" name="flagEmoji" placeholder="পতাকা ইমোজি (e.g. 🇺🇸)" required />
-      <input type="number" step="0.01" name="price" placeholder="দাম ($)" required />
+      <input type="text" name="prefix" placeholder="কোড/প্রিফিক্স (e.g. +1)" required />
+      <input type="text" name="ranges" placeholder="রেঞ্জ (comma separated)" required />
       <button type="submit" class="btn-success">যোগ করুন</button>
     </form>
   </div>
@@ -51,26 +48,26 @@
       <tr>
         <th>Telegram ID</th>
         <th>User Name</th>
-        <th>Balance ($)</th>
+        <th>Balance (৳)</th>
         <th>Status</th>
         <th>Actions</th>
       </tr>
       <% users.forEach(user => { %>
       <tr>
         <td><%= user.telegramId %></td>
-        <td><%= user.firstName %> (@<%= user.username %>)</td>
-        <td>$<%= user.balance.toFixed(2) %></td>
-        <td><%= user.isSuspended ? '🔴 Suspended' : '🟢 Active' %></td>
+        <td>@<%= user.username || 'N/A' %></td>
+        <td>৳<%= (user.balance || 0).toFixed(2) %></td>
+        <td><%= user.status === 'Banned' ? '🔴 Banned' : '🟢 Active' %></td>
         <td>
           <form action="/admin/user/balance" method="POST" style="display:inline;">
             <input type="hidden" name="telegramId" value="<%= user.telegramId %>">
-            <input type="number" step="0.1" name="amount" placeholder="+/- Amount" style="width:70px;">
+            <input type="number" step="0.1" name="amount" placeholder="+/- Amount" style="width:70px;" required>
             <button type="submit" class="btn-success">Add/Sub</button>
           </form>
 
           <form action="/admin/user/suspend" method="POST" style="display:inline;">
             <input type="hidden" name="telegramId" value="<%= user.telegramId %>">
-            <button type="submit" class="btn-warning"><%= user.isSuspended ? 'Unsuspend' : 'Suspend' %></button>
+            <button type="submit" class="btn-warning"><%= user.status === 'Banned' ? 'Unban' : 'Ban' %></button>
           </form>
 
           <form action="/admin/user/delete" method="POST" style="display:inline;" onsubmit="return confirm('Are you sure?')">
