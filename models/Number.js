@@ -12,4 +12,4 @@ const activeNumberSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now }
 });
 
-module.exports = mongoose.model('ActiveNumber', activeNumberSchema);
+module.exports = mongoose.models.ActiveNumber || mongoose.model('ActiveNumber', activeNumberSchema);
