@@ -12,7 +12,7 @@ mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log('MongoDB Connected for Bot'))
   .catch(err => console.error('MongoDB Error:', err));
 
-// ১. /start কমান্ড ও মেইন মেনু
+// ১. /start কমান্ড
 bot.onText(/\/start/, async (msg) => {
   const chatId = msg.chat.id;
   const telegramId = msg.from.id.toString();
@@ -31,23 +31,33 @@ bot.onText(/\/start/, async (msg) => {
     return bot.sendMessage(chatId, "❌ আপনার অ্যাকাউন্টটি সাময়িকভাবে স্থগিত করা হয়েছে।");
   }
 
-  // প্যানেল থেকে সার্ভিস লিস্ট ফেচ করা (অথবা আপনার প্যানেলের ক্যাটাগরি)
   sendMainMenu(chatId);
 });
 
+// ২. মেইন মেনু (আপনার প্যানেল থেকে সার্ভিস ফেচ করার সঠিক পদ্ধতি)
 async function sendMainMenu(chatId, messageId = null) {
   try {
-    // 🔴 আপনার প্যানেলের এপিআই থেকে সার্ভিস বা ক্যাটাগরি লিস্ট ফেচ করার রিকোয়েস্ট 
-    // (আপনার এপিআই ডকুমেন্টেশন অনুযায়ী এখানে ইউআরএল ঠিক করে নিতে পারেন)
-    const response = await axios.get(`${process.env.API_URL}?action=getServices&key=${process.env.API_KEY}`);
-    const services = response.data.services || ['facebook', 'telegram', 'whatsapp', 'imo', 'instagram'];
+    // সরাসরি .env এর API_URL এবং API_KEY দিয়ে রিকোয়েস্ট পাঠানো
+    const response = await axios.get(`${process.env.API_URL}`, {
+      params: {
+        api_key: process.env.API_KEY,
+        action: 'services' // বেশিরভাগ প্যানেলের স্ট্যান্ডার্ড অ্যাকশন
+      }
+    });
 
+    // প্যানেল থেকে ডাটা অ্যারে বা অবজেক্ট আকারে আসতে পারে
+    const servicesData = response.data.services || response.data;
+    
     const keyboard = [];
     let row = [];
-    
-    services.forEach((service, index) => {
-      row.push({ text: `🔹 ${service.toUpperCase()}`, callback_data: `service_${service}` });
-      if (row.length === 2 || index === services.length - 1) {
+
+    // যদি ডেটা অবজেক্ট বা অ্যারে হয় সে অনুযায়ী হ্যান্ডেল করা
+    const serviceKeys = Array.isArray(servicesData) ? servicesData : Object.keys(servicesData);
+
+    serviceKeys.slice(0, 10).forEach((srv, index) => {
+      const srvName = typeof srv === 'string' ? srv : (srv.name || srv.code);
+      row.push({ text: `🔹 ${srvName.toUpperCase()}`, callback_data: `service_${srvName}` });
+      if (row.length === 2 || index === serviceKeys.length - 1) {
         keyboard.push(row);
         row = [];
       }
@@ -56,147 +66,131 @@ async function sendMainMenu(chatId, messageId = null) {
     const menuOptions = { reply_markup: { inline_keyboard: keyboard } };
 
     if (messageId) {
-      bot.editMessageText("📌 আপনার প্যানেল থেকে প্রাপ্ত সার্ভিসসমূহ নিচে দেওয়া হলো:", {
+      bot.editMessageText("📌 আপনার প্যানেল থেকে উপলব্ধ সার্ভিসসমূহ:", {
         chat_id: chatId,
         message_id: messageId,
         parse_mode: 'Markdown',
         ...menuOptions
       });
     } else {
-      bot.sendMessage(chatId, "📌 আপনার প্যানেল থেকে প্রাপ্ত সার্ভিসসমূহ নিচে দেওয়া হলো:", {
+      bot.sendMessage(chatId, "📌 আপনার প্যানেল থেকে উপলব্ধ সার্ভিসসমূহ:", {
         parse_mode: 'Markdown',
         ...menuOptions
       });
     }
   } catch (error) {
-    console.error("API Error fetching services:", error.message);
-    bot.sendMessage(chatId, "❌ প্যানেল থেকে সার্ভিস লোড করতে সমস্যা হয়েছে। এপিআই চেক করুন।");
+    console.error("Panel API Error:", error.response?.data || error.message);
+    const errorText = "❌ প্যানেল থেকে সার্ভিস লোড করতে সমস্যা হয়েছে। `.env` ফাইলের `API_URL` এবং `API_KEY` সঠিক আছে কি না চেক করুন।";
+    if (messageId) {
+      bot.editMessageText(errorText, { chat_id: chatId, message_id: messageId });
+    } else {
+      bot.sendMessage(chatId, errorText);
+    }
   }
 }
 
-// ২. ইনলাইন বাটন ও ক্যালব্যাক হ্যান্ডেলার
+// ৩. ক্যালব্যাক ও নাম্বার জেনারেট হ্যান্ডেলার
 bot.on('callback_query', async (query) => {
   const chatId = query.message.chat.id;
   const messageId = query.message.message_id;
   const data = query.data;
 
-  // যখন কোনো সার্ভিস সিলেক্ট করা হবে, তখন প্যানেল থেকে ওই সার্ভিসের উপলব্ধ কান্ট্রি লিস্ট ফেচ করা হবে
   if (data.startsWith('service_')) {
     const service = data.split('_')[1];
 
     try {
-      // 🔴 প্যানেল এপিআই থেকে কান্ট্রি লিস্ট আনার রিকোয়েস্ট
-      const countryRes = await axios.get(`${process.env.API_URL}?action=getCountries&service=${service}&key=${process.env.API_KEY}`);
-      const countries = countryRes.data.countries || [{ code: 'usa', name: 'USA' }, { code: 'uk', name: 'UK' }]; // ফলব্যাক
-
-      const countryKeyboard = [];
-      let row = [];
-
-      countries.forEach((country, index) => {
-        const countryName = country.name || country.toUpperCase();
-        const countryCode = country.code || country;
-        
-        row.push({ text: `🌐 ${countryName}`, callback_data: `getnum_${service}_${countryCode}` });
-        if (row.length === 2 || index === countries.length - 1) {
-          countryKeyboard.push(row);
-          row = [];
+      // প্যানেল থেকে উক্ত সার্ভিসের জন্য কান্ট্রি বা প্রাইস লিস্ট আনা
+      const res = await axios.get(`${process.env.API_URL}`, {
+        params: {
+          api_key: process.env.API_KEY,
+          action: 'prices',
+          service: service
         }
       });
 
-      countryKeyboard.push([{ text: "🔙 Back to Menu", callback_data: "back_to_menu" }]);
-
-      bot.editMessageText(`📌 সার্ভিস: **${service.toUpperCase()}**\n\nআপনার প্যানেলে উপলব্ধ কান্ট্রিগুলো নিচে দেওয়া হলো:`, {
+      bot.editMessageText(`📌 সার্ভিস: **${service.toUpperCase()}**\n\nনাম্বার নিতে নিচের বাটনে ক্লিক করুন:`, {
         chat_id: chatId,
         message_id: messageId,
         parse_mode: 'Markdown',
-        reply_markup: { inline_keyboard: countryKeyboard }
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "📱 Get Number Now", callback_data: `getnum_${service}` }],
+            [{ text: "🔙 Back", callback_data: "back_to_menu" }]
+          ]
+        }
       });
-
     } catch (err) {
-      console.error("Error fetching countries:", err.message);
       bot.answerCallbackQuery(query.id, { text: "❌ প্যানেল থেকে কান্ট্রি লোড করা যায়নি!", show_alert: true });
     }
   }
 
-  // ৩. কান্ট্রি সিলেক্ট করার পর প্যানেল থেকে সরাসরি রিয়েল নাম্বার জেনারেট করা
   else if (data.startsWith('getnum_')) {
-    const [, service, country] = data.split('_');
+    const service = data.split('_')[1];
     const telegramId = query.from.id.toString();
 
-    let assignedNumber = "";
-    let orderId = "";
-
     try {
-      // 🔴 আপনার প্যানেলের আসল এপিআই কল যা সরাসরি প্যানেল থেকে নাম্বার এনে দিবে
-      const numberRes = await axios.get(`${process.env.API_URL}?action=getNumber&service=${service}&country=${country}&key=${process.env.API_KEY}`);
-      
-      assignedNumber = numberRes.data.number || numberRes.data.phone;
-      orderId = numberRes.data.id || numberRes.data.orderId || "12345";
+      // প্যানেল থেকে সরাসরি রিয়েল নাম্বার নেওয়ার এপিআই কল
+      const numRes = await axios.get(`${process.env.API_URL}`, {
+        params: {
+          api_key: process.env.API_KEY,
+          action: 'getNumber',
+          service: service
+        }
+      });
 
-      if (!assignedNumber) {
-        return bot.answerCallbackQuery(query.id, { text: "⚠️ এই মুহূর্তে এই কান্ট্রিতে কোনো নাম্বার খালি নেই!", show_alert: true });
+      const phoneNumber = numRes.data.number || numRes.data.phone;
+      const orderId = numRes.data.id || numRes.data.orderId || "12345";
+
+      if (!phoneNumber) {
+        return bot.answerCallbackQuery(query.id, { text: "⚠️ এই মুহূর্তে কোনো নাম্বার খালি নেই!", show_alert: true });
       }
 
-      // ডাটাবেজে সেভ করা যাতে আপনার প্যানেল বা ডাটাবেজে দেখা যায়
       await ActiveNumber.create({
-        telegramId: telegramId,
-        phoneNumber: assignedNumber,
-        service: service,
-        country: country,
-        orderId: orderId,
-        otpCode: "Waiting for OTP..."
+        telegramId,
+        phoneNumber,
+        service,
+        orderId,
+        otpCode: "Waiting..."
+      });
+
+      bot.editMessageText(`✅ **সফলভাবে নাম্বার নেওয়া হয়েছে!**\n\n📱 নাম্বার: \`${phoneNumber}\``, {
+        chat_id: chatId,
+        message_id: messageId,
+        parse_mode: 'Markdown',
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "📩 Check OTP", callback_data: `checkotp_${orderId}` }],
+            [{ text: "🔙 Main Menu", callback_data: "back_to_menu" }]
+          ]
+        }
       });
 
     } catch (error) {
-      console.error("Panel API Number Error:", error.message);
-      return bot.answerCallbackQuery(query.id, { text: "❌ প্যানেল থেকে নাম্বার নিতে ব্যর্থ হয়েছে!", show_alert: true });
+      bot.answerCallbackQuery(query.id, { text: "❌ প্যানেল থেকে নাম্বার জেনারেট হয়নি!", show_alert: true });
     }
-
-    const numberManageMenu = {
-      reply_markup: {
-        inline_keyboard: [
-          [
-            { text: "🔄 Change Number", callback_data: `getnum_${service}_${country}` },
-            { text: "🌐 Switch Country", callback_data: `service_${service}` }
-          ],
-          [
-            { text: "📩 OTP Code (Auto)", callback_data: `action_otp_${orderId}` }
-          ],
-          [
-            { text: "🔙 Main Menu", callback_data: "back_to_menu" }
-          ]
-        ]
-      }
-    };
-
-    bot.editMessageText(`✅ **প্যানেল থেকে সফলভাবে নাম্বার নেওয়া হয়েছে!**\n\n📱 নাম্বার: \`${assignedNumber}\`\n🌐 কান্ট্রি: ${country.toUpperCase()}\n🛠️ সার্ভিস: ${service.toUpperCase()}\n\n⏳ ওটিপির জন্য অপেক্ষা করা হচ্ছে...`, {
-      chat_id: chatId,
-      message_id: messageId,
-      parse_mode: 'Markdown',
-      ...numberManageMenu
-    });
   }
 
-  // ওটিপি চেক হ্যান্ডেলার
-  else if (data.startsWith('action_otp_')) {
-    const orderId = data.split('_')[2];
+  else if (data.startsWith('checkotp_')) {
+    const orderId = data.split('_')[1];
     try {
-      const statusRes = await axios.get(`${process.env.API_URL}?action=getStatus&id=${orderId}&key=${process.env.API_KEY}`);
-      const code = statusRes.data.code || statusRes.data.otp || "কোনো কোড আসেনি";
-      
-      bot.answerCallbackQuery(query.id, { text: `🔑 লেটেস্ট ওটিপি: ${code}`, show_alert: true });
+      const statusRes = await axios.get(`${process.env.API_URL}`, {
+        params: {
+          api_key: process.env.API_KEY,
+          action: 'getStatus',
+          id: orderId
+        }
+      });
+      const code = statusRes.data.code || statusRes.data.otp || "কোড এখনো আসেনি";
+      bot.answerCallbackQuery(query.id, { text: `🔑 ওটিপি কোড: ${code}`, show_alert: true });
     } catch (err) {
       bot.answerCallbackQuery(query.id, { text: "⚠️ ওটিপি চেক করতে সমস্যা হয়েছে।", show_alert: true });
     }
     return;
   }
 
-  // ব্যাক টু মেনু
   else if (data === 'back_to_menu') {
     sendMainMenu(chatId, messageId);
   }
 
   bot.answerCallbackQuery(query.id);
 });
-
-console.log("Dynamic Panel Bot is running smoothly...");
