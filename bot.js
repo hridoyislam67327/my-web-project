@@ -1,212 +1,187 @@
 require('dotenv').config();
 const TelegramBot = require('node-telegram-bot-api');
-const axios = require('axios');
 const mongoose = require('mongoose');
 
-// Database Models
 const User = require('./models/User');
+const Service = require('./models/Service');
 const ActiveNumber = require('./models/Number');
+const Settings = require('./models/Settings');
 
-// Initialize Bot
+mongoose.connect(process.env.MONGO_URI)
+  .then(() => console.log('MongoDB Connected for Bot'))
+  .catch(err => console.error(err));
+
 const bot = new TelegramBot(process.env.BOT_TOKEN, { polling: true });
 
-// Connect MongoDB
-mongoose.connect(process.env.MONGO_URI)
-  .then(() => console.log('MongoDB Connected Successfully'))
-  .catch(err => console.error('MongoDB Connection Error:', err));
-
-// Axios API Instance Configuration
-const api = axios.create({
-  baseURL: process.env.OTP_API_URL,
-  headers: {
-    'X-API-Key': process.env.OTP_API_KEY,
-    'Content-Type': 'application/json'
+// সেটিংস লোডার
+async function getSettings() {
+  let settings = await Settings.findOne();
+  if (!settings) {
+    settings = await Settings.create({});
   }
-});
+  return settings;
+}
 
-// Command: /start
-bot.onText(/\/start/, async (msg) => {
-  const chatId = msg.chat.id;
-  const telegramId = msg.from.id.toString();
+// মূল বটম মেনু
+const mainKeyboard = {
+  reply_markup: {
+    keyboard: [
+      [{ text: "🈴 NUMBERS" }],
+      [{ text: "🔐 2FA AUTH" }, { text: "📦 HISTORY" }],
+      [{ text: "💰 BALANCE" }, { text: "💸 WITHDRAW" }],
+      [{ text: "📊 LIVE TRAFFIC" }]
+    ],
+    resize_keyboard: true
+  }
+};
 
-  // Create or Find User in DB
-  let user = await User.findOne({ telegramId });
-  if (!user) {
-    user = await User.create({ telegramId, username: msg.from.username });
+// 👑 টেলিগ্রাম থেকেই ডাইরেক্ট এডমিন কন্ট্রোল কমান্ড (/admin)
+bot.onText(/\/admin/, async (msg) => {
+  const chatId = msg.chat.id.toString();
+  if (chatId !== process.env.ADMIN_TELEGRAM_ID) {
+    return bot.sendMessage(chatId, "❌ **Access Denied! Only Admin can access this panel.**");
   }
 
-  if (user.status === 'SUSPENDED') {
-    return bot.sendMessage(chatId, "❌ আপনার অ্যাকাউন্টটি সাসপেন্ড করা হয়েছে। এডমিনের সাথে যোগাযোগ করুন।");
-  }
-
-  const options = {
+  const adminButtons = {
     reply_markup: {
       inline_keyboard: [
-        [
-          { text: "📘 Facebook", callback_data: "cat_facebook" },
-          { text: "📷 Instagram", callback_data: "cat_instagram" }
-        ],
-        [
-          { text: "💬 WhatsApp", callback_data: "cat_whatsapp" },
-          { text: "✈️ Telegram", callback_data: "cat_telegram" }
-        ],
-        [
-          { text: "📱 imo", callback_data: "cat_imo" }
-        ],
-        [
-          { text: "👤 Profile / Balance", callback_data: "user_profile" }
-        ]
+        [{ text: "📢 Broadcast Message", callback_data: "adm_broadcast" }],
+        [{ text: "👤 User Balance Edit", callback_data: "adm_edit_balance" }],
+        [{ text: "🚫 Ban / Unban User", callback_data: "adm_ban_user" }],
+        [{ text: "🔗 Edit OTP Group Link", callback_data: "adm_edit_link" }]
       ]
     }
   };
 
-  bot.sendMessage(chatId, `👋 **স্বাগতম!**\n\n💰 আপনার বর্তমান ব্যালেন্স: \`${user.balance || 0}\` BDT\n\nপ্রয়োজনীয় সার্ভিস নির্বাচন করুন:`, {
-    parse_mode: 'Markdown',
-    ...options
-  });
+  bot.sendMessage(chatId, "👑 **Admin Quick Control Panel Panel**\nChoose an action:", { parse_mode: 'Markdown', ...adminButtons });
 });
 
-// Callback Query Handler
-bot.on('callback_query', async (query) => {
-  const chatId = query.message.chat.id;
-  const telegramId = query.from.id.toString();
-  const data = query.data;
+// Start Command & User Checking
+bot.onText(/\/start/, async (msg) => {
+  const chatId = msg.chat.id.toString();
+  let user = await User.findOne({ telegramId: chatId });
 
-  // 1. User Profile
-  if (data === 'user_profile') {
-    const user = await User.findOne({ telegramId });
-    return bot.sendMessage(chatId, `👤 **ইউজার প্রোফাইল**\n\n🆔 ID: \`${telegramId}\`\n💰 Balance: \`${user ? user.balance : 0}\` BDT`, { parse_mode: 'Markdown' });
+  if (user && user.isBanned) {
+    return bot.sendMessage(chatId, "🚫 **Your account has been suspended by the Admin.**");
   }
 
-  // 2. Select Category (Returns Range / Country Options)
-  if (data.startsWith('cat_')) {
-    const service = data.split('_')[1];
-    
-    // Example range prefix mapping according to your API format
-    const rangeOptions = {
+  if (!user) {
+    user = await User.create({ telegramId: chatId, username: msg.from.username, balance: 0 });
+  }
+
+  bot.sendMessage(chatId, `👋 **Welcome, ${msg.from.first_name}!**`, { parse_mode: 'Markdown', ...mainKeyboard });
+});
+
+// বটম মেনু লিসেনার
+bot.on('message', async (msg) => {
+  const chatId = msg.chat.id.toString();
+  const text = msg.text;
+
+  const user = await User.findOne({ telegramId: chatId });
+  if (user && user.isBanned) return;
+
+  if (text === "🈴 NUMBERS") {
+    const options = {
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: "📘 Facebook", callback_data: "cat_facebook" }, { text: "💬 WhatsApp", callback_data: "cat_whatsapp" }],
+          [{ text: "✈️ Telegram", callback_data: "cat_telegram" }, { text: "📷 Instagram", callback_data: "cat_instagram" }]
+        ]
+      }
+    };
+    bot.sendMessage(chatId, "📌 **Select Service Category:**", options);
+
+  } else if (text === "💰 BALANCE") {
+    bot.sendMessage(chatId, `💳 **Your Current Balance:** $${user ? user.balance.toFixed(2) : '0.00'}`);
+
+  } else if (text === "📊 LIVE TRAFFIC") {
+    const activeRequests = await ActiveNumber.countDocuments({ status: 'WAITING' });
+    const totalServed = await ActiveNumber.countDocuments();
+    bot.sendMessage(chatId, `📊 **LIVE TRAFFIC ANALYTICS**\n\n🟢 Active OTP Requests: **${activeRequests}**\n📈 Total Processed Numbers: **${totalServed}**`);
+  }
+});
+
+// ইনলাইন কলব্যাক অ্যাকশন ও ডায়নামিক ডিজাইন হ্যান্ডলিং
+bot.on('callback_query', async (query) => {
+  const chatId = query.message.chat.id.toString();
+  const data = query.data;
+  const user = await User.findOne({ telegramId: chatId });
+  const settings = await getSettings();
+
+  if (user && user.isBanned) {
+    return bot.answerCallbackQuery(query.id, { text: "🚫 Account Banned!", show_alert: true });
+  }
+
+  // ১. ক্যাটাগরি ও নাম্বার কেনা
+  if (data.startsWith('buy_')) {
+    const [, serviceKey, countryCode, priceStr] = data.split('_');
+    const price = parseFloat(priceStr);
+
+    if (user.balance < price) {
+      return bot.answerCallbackQuery(query.id, { text: "❌ Insufficient Balance!", show_alert: true });
+    }
+
+    user.balance -= price;
+    await user.save();
+
+    const generatedNum = "959686420106"; // এপিআই বা জেনারেটেড নম্বর
+    const activeNum = await ActiveNumber.create({
+      telegramId: chatId,
+      phoneNumber: generatedNum,
+      service: serviceKey,
+      country: countryCode,
+      orderId: "ORD_" + Date.now()
+    });
+
+    // এডমিন প্যানেল থেকে সেট করা ডাইনামিক টেমপ্লেট অ্যাপ্লাই করা
+    let cardText = settings.numberCardTemplate
+      .replace('{flag}', '🇲🇲')
+      .replace('{country}', countryCode.toUpperCase())
+      .replace('{number}', `+${activeNum.phoneNumber}`);
+
+    const inlineButtons = {
       reply_markup: {
         inline_keyboard: [
           [
-            { text: "🇬🇧 UK Range 1 (26134XXX)", callback_data: `getnum_${service}_26134XXX` },
-            { text: "🇬🇧 UK Range 2 (22507XXX)", callback_data: `getnum_${service}_22507XXX` }
+            { text: "🔄 Switch Number", callback_data: `switch_num_${activeNum._id}` },
+            { text: "🔄 Switch Country", callback_data: "cat_facebook" }
           ],
           [
-            { text: "🔙 Back to Menu", callback_data: "go_back" }
+            { text: "🔄 Code Fetch", callback_data: `code_fetch_${activeNum._id}` }
+          ],
+          [
+            { text: "🔐 OTP GROUP", url: settings.otpGroupLink }
           ]
         ]
       }
     };
-    return bot.sendMessage(chatId, `📌 **${service.toUpperCase()}**-এর জন্য রেন্জ নির্বাচন করুন:`, { parse_mode: 'Markdown', ...rangeOptions });
+
+    bot.sendMessage(chatId, cardText, { parse_mode: 'Markdown', ...inlineButtons });
   }
 
-  // 3. Request Number From API (/getnum)
-  if (data.startsWith('getnum_')) {
-    const [, service, range] = data.split('_');
+  // ২. Code Fetch ক্লিক করা হলে
+  if (data.startsWith('code_fetch_')) {
+    const numId = data.split('_')[2];
+    const activeNum = await ActiveNumber.findById(numId);
 
-    bot.sendMessage(chatId, "🔄 নতুন নাম্বার সংগ্রহ করা হচ্ছে, অনুগ্রহ করে অপেক্ষা করুন...");
+    if (!activeNum) return bot.answerCallbackQuery(query.id, { text: "⚠️ Number not found!", show_alert: true });
 
-    try {
-      // Call POST API (/getnum)
-      const res = await api.post('/getnum', { range });
-
-      if (res.data && res.data.meta && res.data.meta.code === 200) {
-        const numData = res.data.data;
-        const fullNumber = numData.full_number;
-
-        // Save active number in MongoDB
-        await ActiveNumber.create({
-          telegramId,
-          phoneNumber: fullNumber,
-          service,
-          country: numData.country || 'Unknown',
-          orderId: `ORD_${Date.now()}`
-        });
-
-        const numberMenu = {
-          reply_markup: {
-            inline_keyboard: [
-              [
-                { text: "🔄 Change Number", callback_data: `act_change_${fullNumber}_${range}` },
-                { text: "🗑️ Delete", callback_data: `act_delete_${fullNumber}` }
-              ],
-              [
-                { text: "👁️ View Code", callback_data: `act_view_${fullNumber}` },
-                { text: "📩 OTP Code", callback_data: `act_otp_${fullNumber}` }
-              ]
-            ]
-          }
-        };
-
-        bot.sendMessage(chatId, `✅ **নাম্বার বরাদ্দ করা হয়েছে!**\n\n📱 **নাম্বার:** \`${fullNumber}\`\n🌐 **কান্ট্রি:** ${numData.country}\n📡 **অপারেটর:** ${numData.operator}\n🛠️ **সার্ভিস:** ${service.toUpperCase()}`, {
-          parse_mode: 'Markdown',
-          ...numberMenu
-        });
-      } else {
-        bot.sendMessage(chatId, "❌ স্টক খালি রয়েছে অথবা নাম্বার পাওয়া যায়নি। পরে চেষ্টা করুন।");
-      }
-    } catch (err) {
-      console.error("API Error:", err.response ? err.response.data : err.message);
-      bot.sendMessage(chatId, "⚠️ এপিআই থেকে নাম্বার আনতে সমস্যা হয়েছে। আবার চেষ্টা করুন।");
-    }
-  }
-
-  // 4. Actions: Get OTP, View Code, Cancel/Delete, Change Number
-  if (data.startsWith('act_')) {
-    const parts = data.split('_');
-    const action = parts[1];
-    const number = parts[2];
-
-    // Fetch Live Console Feed for OTP
-    if (action === 'otp' || action === 'view') {
-      bot.sendMessage(chatId, "🔎 ওটিপি কোড চেক করা হচ্ছে...");
-
-      try {
-        // Call GET API (/live-console)
-        const res = await api.get('/live-console?limit=55');
-
-        if (res.data && res.data.data && res.data.data.otps) {
-          const matchedOtp = res.data.data.otps.find(o => o.number === number);
-
-          if (matchedOtp && matchedOtp.otp) {
-            // Update Mongo DB
-            await ActiveNumber.findOneAndUpdate(
-              { phoneNumber: number },
-              { otpCode: matchedOtp.otp, fullMessage: matchedOtp.message, status: 'RECEIVED' }
-            );
-
-            bot.sendMessage(chatId, `📩 **ওটিপি মেসেজ পাওয়া গেছে!**\n\n📱 **নাম্বার:** \`${number}\`\n🔑 **OTP Code:** \`${matchedOtp.otp}\`\n💬 **মেসেজ:** \`${matchedOtp.message}\``, { parse_mode: 'Markdown' });
-          } else {
-            bot.sendMessage(chatId, `⏳ **\`${number}\`** নাম্বারে এখনো কোনো ওটিপি আসেনি। কিছুক্ষণ পর **OTP Code** বাটনে আবার চাপুন।`, { parse_mode: 'Markdown' });
-          }
-        } else {
-          bot.sendMessage(chatId, "⏳ কোনো নতুন ওটিপি পাওয়া যায়নি।");
+    if (activeNum.otpCode) {
+      let successText = settings.codeFoundTemplate.replace('{number}', activeNum.phoneNumber);
+      const copyButton = {
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: `📋 ${activeNum.otpCode}`, callback_data: "copy_code" }],
+            [{ text: "📩 Get Full Message", callback_data: `full_msg_${activeNum._id}` }]
+          ]
         }
-      } catch (err) {
-        console.error("OTP API Error:", err.message);
-        bot.sendMessage(chatId, "⚠️ ওটিপি চেক করতে সমস্যা হয়েছে।");
-      }
-    }
-
-    // Delete / Cancel Number
-    if (action === 'delete') {
-      await ActiveNumber.findOneAndUpdate({ phoneNumber: number }, { status: 'CANCELLED' });
-      bot.sendMessage(chatId, `🗑️ \`${number}\` নাম্বারটি ক্যান্সেল করে দেওয়া হয়েছে।`, { parse_mode: 'Markdown' });
-    }
-
-    // Change Number (Requests new one with same range)
-    if (action === 'change') {
-      const range = parts[3] || "26134XXX";
-      bot.sendMessage(chatId, `🔄 পুরোনো নাম্বার বাদ দিয়ে নতুন নাম্বার নেওয়া হচ্ছে...`);
-      // Trigger new number request
-      bot.emit('callback_query', {
-        ...query,
-        data: `getnum_service_${range}`
-      });
+      };
+      bot.sendMessage(chatId, successText, { parse_mode: 'Markdown', ...copyButton });
+    } else {
+      let notFoundText = settings.codeNotFoundTemplate.replace('{number}', activeNum.phoneNumber);
+      bot.sendMessage(chatId, notFoundText, { parse_mode: 'Markdown' });
     }
   }
 
-  // Go Back
-  if (data === 'go_back') {
-    bot.emit('message', { chat: { id: chatId }, from: { id: telegramId }, text: '/start' });
-  }
+  bot.answerCallbackQuery(query.id);
 });
