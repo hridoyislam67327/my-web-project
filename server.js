@@ -2,41 +2,26 @@ const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const bodyParser = require('body-parser');
-const { Telegraf, Markup } = require('telegraf');
 
 const app = express();
 app.use(cors());
 app.use(bodyParser.json());
 
-// ১. টেলিগ্রাম বট টোকেন (এখানে আপনার বটের টোকেন বসাবেন)
-const BOT_TOKEN = process.env.BOT_TOKEN || 'YOUR_BOT_TOKEN_HERE';
-const bot = new Telegraf(BOT_TOKEN);
-
-// ২. MongoDB কানেকশন URI (লোকাল বা ক্লাউড URI)
+// MongoDB Connection
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/otp_bot_db';
 
 mongoose.connect(MONGO_URI, {
   useNewUrlParser: true,
   useUnifiedTopology: true
 }).then(() => {
-  console.log('Database connected successfully.');
+  console.log('Database connected successfully in server.js');
 }).catch(err => {
   console.error('Database connection error:', err);
-  // টেকনিক্যাল প্রবলেম বা ফেইলুর হলে অটো হ্যান্ডেল বা রিকভারি করার সিস্টেম (সেলফ-হিলিং)
-  handleTechnicalError(err);
 });
 
-// অটো-টেকনিক্যাল এরর রিকভারি মেকানিজম
-function handleTechnicalError(error) {
-  console.warn('Attempting automatic recovery from technical glitch...');
-  setTimeout(() => {
-    console.log('System recovered and stable.');
-  }, 5000);
-}
-
-// --- Database Schemas & Models ---
+// --- Schemas & Models ---
 const settingsSchema = new mongoose.Schema({
-  otpRate: { type: Number, default: 1.0 } // প্রতি ওটিপির রেট
+  otpRate: { type: Number, default: 1.0 }
 });
 const Settings = mongoose.model('Settings', settingsSchema);
 
@@ -57,12 +42,7 @@ const numberRangeSchema = new mongoose.Schema({
 });
 const NumberRange = mongoose.model('NumberRange', numberRangeSchema);
 
-
-// ==========================================
-// 🌐 ADMIN BACKEND APIs & DASHBOARD UI
-// ==========================================
-
-// স্ট্যাটাস এবং ইউজার কাউন্ট এপিআই
+// --- Admin APIs ---
 app.get('/api/admin/stats', async (req, res) => {
   try {
     const totalUsers = await User.countDocuments();
@@ -75,7 +55,6 @@ app.get('/api/admin/stats', async (req, res) => {
   }
 });
 
-// ইউজারের ব্যালেন্স এবং স্ট্যাটাস আপডেট
 app.post('/api/admin/update-user', async (req, res) => {
   try {
     const { telegramId, balance, status } = req.body;
@@ -90,16 +69,12 @@ app.post('/api/admin/update-user', async (req, res) => {
   }
 });
 
-// পার ওটিপি রেট আপডেট
 app.post('/api/admin/set-rate', async (req, res) => {
   try {
     const { otpRate } = req.body;
     let settings = await Settings.findOne();
-    if (!settings) {
-      settings = new Settings({ otpRate });
-    } else {
-      settings.otpRate = otpRate;
-    }
+    if (!settings) settings = new Settings({ otpRate });
+    else settings.otpRate = otpRate;
     await settings.save();
     res.json({ success: true, message: 'OTP rate updated successfully', otpRate });
   } catch (error) {
@@ -107,7 +82,6 @@ app.post('/api/admin/set-rate', async (req, res) => {
   }
 });
 
-// কান্ট্রি ও নাম্বার রেঞ্জ অ্যাড এবং ডিলিট
 app.post('/api/admin/ranges', async (req, res) => {
   try {
     const { country, prefix, ranges } = req.body;
@@ -128,29 +102,7 @@ app.delete('/api/admin/ranges/:id', async (req, res) => {
   }
 });
 
-// ব্রডকাস্ট সিস্টেম
-app.post('/api/admin/broadcast', async (req, res) => {
-  try {
-    const { message } = req.body;
-    const users = await User.find({}, 'telegramId');
-    
-    let sentCount = 0;
-    for (let u of users) {
-      try {
-        await bot.telegram.sendMessage(u.telegramId, `📢 *অ্যাডমিন ব্রডকাস্ট মেসেজ:*\n\n${message}`, { parse_mode: 'Markdown' });
-        sentCount++;
-      } catch (err) {
-        console.log(`Failed to send to ${u.telegramId}`);
-      }
-    }
-    
-    res.json({ success: true, message: `Broadcast successfully sent to ${sentCount} users.` });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// ব্রাউজার অ্যাডমিন প্যানেল ইন্টারফেস (HTML)
+// Admin Panel Web Interface (HTML)
 app.get('/', (req, res) => {
   res.send(`
     <!DOCTYPE html>
@@ -170,50 +122,33 @@ app.get('/', (req, res) => {
         </style>
     </head>
     <body>
-        <h1>🚀 OTP Bot Ultimate Admin Panel</h1>
-
+        <h1>🚀 OTP Bot Admin Panel</h1>
         <div class="card">
-            <h3>📊 Live System Stats</h3>
-            <p>Total Registered Users: <strong id="totalUsers">0</strong></p>
-            <p>Active/Working Users: <strong id="activeUsers">0</strong></p>
+            <h3>📊 System Stats</h3>
+            <p>Total Users: <strong id="totalUsers">0</strong></p>
+            <p>Active Users: <strong id="activeUsers">0</strong></p>
         </div>
-
         <div class="card">
             <h3>💰 Per OTP Rate Control</h3>
-            <input type="number" id="otpRateInput" step="0.1" placeholder="Enter Rate per OTP">
-            <button onclick="updateRate()">Update OTP Rate</button>
+            <input type="number" id="otpRateInput" step="0.1">
+            <button onclick="updateRate()">Update Rate</button>
         </div>
-
         <div class="card">
-            <h3>📢 Broadcast System</h3>
-            <textarea id="broadcastMsg" rows="3" placeholder="Type broadcast message for users..."></textarea>
-            <button onclick="sendBroadcast()">Send Broadcast</button>
-        </div>
-
-        <div class="card">
-            <h3>🌍 Add Country & Number Range</h3>
+            <h3>🌍 Add Number Range</h3>
             <input type="text" id="countryName" placeholder="Country Name">
-            <input type="text" id="prefix" placeholder="Prefix (e.g. +880)">
-            <input type="text" id="rangesList" placeholder="Ranges (comma separated, e.g. 017, 018)">
+            <input type="text" id="prefix" placeholder="Prefix (+880)">
+            <input type="text" id="rangesList" placeholder="Ranges (comma separated)">
             <button onclick="addRange()">Add Range</button>
         </div>
-
         <div class="card">
-            <h3>👥 User Management & Status Control</h3>
+            <h3>👥 User Management</h3>
             <table>
                 <thead>
-                    <tr>
-                        <th>Telegram ID</th>
-                        <th>Username</th>
-                        <th>Balance (৳)</th>
-                        <th>Status</th>
-                        <th>Action</th>
-                    </tr>
+                    <tr><th>Telegram ID</th><th>Username</th><th>Balance</th><th>Status</th><th>Action</th></tr>
                 </thead>
                 <tbody id="userTableBody"></tbody>
             </table>
         </div>
-
         <script>
             async function loadData() {
                 const res = await fetch('/api/admin/stats');
@@ -222,14 +157,13 @@ app.get('/', (req, res) => {
                     document.getElementById('totalUsers').innerText = data.totalUsers;
                     document.getElementById('activeUsers').innerText = data.activeUsers;
                     document.getElementById('otpRateInput').value = data.otpRate;
-
                     let tbody = document.getElementById('userTableBody');
                     tbody.innerHTML = '';
                     data.users.forEach(user => {
                         tbody.innerHTML += \`<tr>
                             <td>\${user.telegramId}</td>
                             <td>@\${user.username || 'N/A'}</td>
-                            <td><input type="number" id="bal_\${user.telegramId}" value="\${user.balance}" style="width:100px;"></td>
+                            <td><input type="number" id="bal_\${user.telegramId}" value="\${user.balance}" style="width:90px;"></td>
                             <td>
                                 <select id="status_\${user.telegramId}">
                                     <option value="Active" \${user.status==='Active'?'selected':''}>Active</option>
@@ -237,63 +171,30 @@ app.get('/', (req, res) => {
                                     <option value="Banned" \${user.status==='Banned'?'selected':''}>Banned</option>
                                 </select>
                             </td>
-                            <td><button onclick="updateUser('\${user.telegramId}')" style="width:auto; padding:5px 15px;">Save</button></td>
+                            <td><button onclick="updateUser('\${user.telegramId}')" style="width:auto; padding:5px 12px;">Save</button></td>
                         </tr>\`;
                     });
                 }
             }
-
             async function updateRate() {
                 const otpRate = parseFloat(document.getElementById('otpRateInput').value);
-                const res = await fetch('/api/admin/set-rate', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ otpRate })
-                });
-                const data = await res.json();
-                alert(data.message);
+                const res = await fetch('/api/admin/set-rate', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ otpRate }) });
+                alert((await res.json()).message);
             }
-
-            async function sendBroadcast() {
-                const message = document.getElementById('broadcastMsg').value;
-                if(!message) return alert('Please enter a message!');
-                const res = await fetch('/api/admin/broadcast', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ message })
-                });
-                const data = await res.json();
-                alert(data.message);
-            }
-
             async function addRange() {
                 const country = document.getElementById('countryName').value;
                 const prefix = document.getElementById('prefix').value;
                 const ranges = document.getElementById('rangesList').value.split(',').map(r => r.trim());
-                
-                const res = await fetch('/api/admin/ranges', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ country, prefix, ranges })
-                });
-                const data = await res.json();
-                alert(data.message);
+                const res = await fetch('/api/admin/ranges', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ country, prefix, ranges }) });
+                alert((await res.json()).message);
                 loadData();
             }
-
             async function updateUser(telegramId) {
                 const balance = parseFloat(document.getElementById(\`bal_\${telegramId}\`).value);
                 const status = document.getElementById(\`status_\${telegramId}\`).value;
-
-                const res = await fetch('/api/admin/update-user', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ telegramId, balance, status })
-                });
-                const data = await res.json();
-                alert(data.message);
+                const res = await fetch('/api/admin/update-user', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ telegramId, balance, status }) });
+                alert((await res.json()).message);
             }
-
             loadData();
         </script>
     </body>
@@ -301,86 +202,5 @@ app.get('/', (req, res) => {
   `);
 });
 
-
-// ==========================================
-// 🤖 TELEGRAM USER PANEL BOT
-// ==========================================
-
-bot.start(async (ctx) => {
-  const telegramId = ctx.from.id.toString();
-  const username = ctx.from.username || 'User';
-
-  try {
-    await User.findOneAndUpdate(
-      { telegramId },
-      { username, status: 'Active', lastActive: Date.now() },
-      { upsert: true, new: true }
-    );
-
-    const userMenu = Markup.keyboard([
-      ['💰 আমার ব্যালেন্স', '📊 কাজের স্ট্যাটাস'],
-      ['🌍 কান্ট্রি ও রেঞ্জ', '⚙️ সাহায্য ও সাপোর্ট']
-    ]).resize();
-
-    ctx.reply(`স্বাগতম ${username}! এটি আপনার **ইউজার প্যানেল**। এখান থেকে আপনার কাজের স্ট্যাটাস ও ব্যালেন্স দেখতে পারবেন।`, userMenu);
-  } catch (error) {
-    console.error('Bot start error:', error);
-  }
-});
-
-// ইউজার ব্যালেন্স চেক
-bot.hears('💰 আমার ব্যালেন্স', async (ctx) => {
-  const telegramId = ctx.from.id.toString();
-  try {
-    const user = await User.findOne({ telegramId });
-    const settings = await Settings.findOne();
-    const rate = settings ? settings.otpRate : 1.0;
-    
-    const balance = user ? user.balance : 0;
-    ctx.reply(`💳 আপনার বর্তমান ব্যালেন্স: ৳${balance}\n💵 বর্তমান পার-ওটিপি রেট: ৳${rate}`);
-  } catch (error) {
-    ctx.reply('ব্যালেন্স চেক করতে সমস্যা হচ্ছে।');
-  }
-});
-
-// ইউজার স্ট্যাটাস চেক
-bot.hears('📊 কাজের স্ট্যাটাস', async (ctx) => {
-  const telegramId = ctx.from.id.toString();
-  try {
-    const user = await User.findOne({ telegramId });
-    const status = user ? user.status : 'Active';
-    ctx.reply(`📌 আপনার বর্তমান কাজের স্ট্যাটাস: *${status}*`, { parse_mode: 'Markdown' });
-  } catch (error) {
-    ctx.reply('স্ট্যাটাস লোড করা যায়নি।');
-  }
-});
-
-// কান্ট্রি ও রেঞ্জ লিস্ট দেখা
-bot.hears('🌍 কান্ট্রি ও রেঞ্জ', async (ctx) => {
-  try {
-    const ranges = await NumberRange.find({ status: 'Active' });
-    if(ranges.length === 0) {
-      return ctx.reply('বর্তমানে কোনো কান্ট্রি বা রেঞ্জ এভেইলেবল নেই।');
-    }
-    let msg = '🌍 *এভেইলেবল কান্ট্রি ও নাম্বার রেঞ্জসমূহ:*\n\n';
-    ranges.forEach(r => {
-      msg += `🏳️ *${r.country}* (${r.prefix})\nরেঞ্জ: ${r.ranges.join(', ')}\n\n`;
-    });
-    ctx.reply(msg, { parse_mode: 'Markdown' });
-  } catch (error) {
-    ctx.reply('রেঞ্জ লোড করতে সমস্যা হয়েছে।');
-  }
-});
-
-bot.hears('⚙️ সাহায্য ও সাপোর্ট', (ctx) => {
-  ctx.reply('যেকোনো টেকনিক্যাল সমস্যা বা ব্যালেন্স রিচার্জের জন্য অ্যাডমিনের সাথে যোগাযোগ করুন। সিস্টেম অটোমেটিক্যালি আপডেট হয়ে যাবে।');
-});
-
-// সার্ভার এবং বট লঞ্চিং
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
-  console.log(`Server and Admin Panel running on port ${PORT}`);
-});
-
-bot.launch();
-console.log('Telegram User Panel Bot is running...');
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`Server is running on port ${PORT}`));
