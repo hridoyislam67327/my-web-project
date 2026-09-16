@@ -34,7 +34,7 @@ bot.onText(/\/start/, async (msg) => {
   sendMainMenu(chatId);
 });
 
-// ২. মেইন মেনু (.env এর API_URL এবং API_KEY ব্যবহার করে সার্ভিস ফেচ করা)
+// ২. মেইন মেনু (প্যানেল থেকে সার্ভিস ফেচ করা)
 async function sendMainMenu(chatId, messageId = null) {
   try {
     const response = await axios.get(process.env.API_URL, {
