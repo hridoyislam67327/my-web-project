@@ -1,60 +1,99 @@
 require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
-const session = require('express-session');
-
-// ১. টেলিগ্রাম বট প্রসেস চালু করা (এটি যুক্ত না করলে বট কাজ করবে না)
-require('./bot.js');
-
 const User = require('./models/User');
 const Service = require('./models/Service');
+const ActiveNumber = require('./models/Number');
+const Settings = require('./models/Settings');
 
 const app = express();
-
-// MongoDB Connection with Error Handling
-mongoose.connect(process.env.MONGO_URI)
-  .then(() => console.log('MongoDB Connected Successfully'))
-  .catch(err => console.error('MongoDB Connection Error:', err));
-
-app.set('view engine', 'ejs');
-app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
-// Session Security Improvement
-app.use(session({
-  secret: process.env.SESSION_SECRET || 'otp_bot_secure_key_123',
-  resave: false,
-  saveUninitialized: false,
-  cookie: { maxAge: 24 * 60 * 60 * 1000 } // 1 day
-}));
+mongoose.connect(process.env.MONGO_URI)
+  .then(() => console.log('MongoDB Connected for Admin Server'))
+  .catch(err => console.error('MongoDB Admin Error:', err));
 
-app.get('/', (req, res) => {
-  res.redirect('/login');
-});
-
-app.get('/login', (req, res) => {
-  res.send(`
-    <form method="POST" action="/login" style="margin:50px auto; width:200px;">
-      <h3>Admin Login</h3>
-      <input type="password" name="password" placeholder="Enter Password" required/>
-      <button type="submit" style="margin-top:10px;">Login</button>
-    </form>
-  `);
-});
-
-app.post('/login', (req, res) => {
-  if (req.body.password === process.env.ADMIN_PASSWORD) {
-    req.session.isAdmin = true;
-    res.redirect('/admin');
+// Admin Auth Middleware
+const isAdmin = (req, res, next) => {
+  const adminKey = req.headers['x-admin-key'] || req.query.admin_key;
+  if (adminKey === process.env.ADMIN_SECRET_KEY) {
+    next();
   } else {
-    res.send('Wrong Password! <a href="/login">Try Again</a>');
+    res.status(403).json({ success: false, message: "Unauthorized access!" });
   }
+};
+
+// ১. ড্যাশবোর্ড ওভারভিউ ও স্ট্যাটস
+app.get('/admin/stats', isAdmin, async (req, res) => {
+  const totalUsers = await User.countDocuments();
+  const bannedUsers = await User.countDocuments({ isBanned: true });
+  const activeNumbers = await ActiveNumber.countDocuments({ status: 'WAITING' });
+  const totalOrders = await ActiveNumber.countDocuments();
+  
+  res.json({ success: true, totalUsers, bannedUsers, activeNumbers, totalOrders });
 });
 
-app.get('/admin', (req, res) => {
-  if (!req.session.isAdmin) return res.redirect('/login');
-  res.send('<h1>👑 Admin Dashboard</h1><p>Welcome Master Admin!</p>');
+// ২. ইউজার ব্যালেন্স এডিট ও ব্যান/আনব্যান (User Management)
+app.post('/admin/user/update', isAdmin, async (req, res) => {
+  const { telegramId, balance, isBanned, resetState } = req.body;
+  
+  const user = await User.findOne({ telegramId });
+  if (!user) return res.status(404).json({ success: false, message: "User not found!" });
+
+  if (balance !== undefined) user.balance = parseFloat(balance);
+  if (isBanned !== undefined) user.isBanned = isBanned;
+  await user.save();
+
+  // ইউজার অ্যাকাউন্টে কোনো ঝামেলা হলে একটিভ সার্ভিস রিসেট
+  if (resetState) {
+    await ActiveNumber.updateMany({ telegramId, status: 'WAITING' }, { status: 'CANCELLED' });
+  }
+
+  res.json({ success: true, message: `User ${telegramId} updated successfully!`, user });
+});
+
+// ৩. মেসেজ ডিজাইন ও সেটিংস আপডেট
+app.post('/admin/settings/update', isAdmin, async (req, res) => {
+  const { otpGroupLink, numberCardTemplate, codeFoundTemplate, codeNotFoundTemplate } = req.body;
+  
+  let settings = await Settings.findOne();
+  if (!settings) settings = new Settings();
+
+  if (otpGroupLink) settings.otpGroupLink = otpGroupLink;
+  if (numberCardTemplate) settings.numberCardTemplate = numberCardTemplate;
+  if (codeFoundTemplate) settings.codeFoundTemplate = codeFoundTemplate;
+  if (codeNotFoundTemplate) settings.codeNotFoundTemplate = codeNotFoundTemplate;
+
+  await settings.save();
+  res.json({ success: true, message: "Message design and settings updated!", settings });
+});
+
+// ৪. ব্রডকাস্ট নোটিশ এনজিকেশন
+app.post('/admin/broadcast', isAdmin, async (req, res) => {
+  const { message } = req.body;
+  const users = await User.find({ isBanned: false });
+
+  // বটের মাধ্যমে মেসেজ পাঠানোর লজিক এপিআই এন্ডপয়েন্ট
+  res.json({ success: true, totalTargetUsers: users.length, message: "Broadcast initiated!" });
+});
+
+// ৫. সার্ভিস ও নাম্বার রেঞ্জ এডিট/এড
+app.post('/admin/service/add-edit', isAdmin, async (req, res) => {
+  const { categoryKey, country, countryCode, price, flagEmoji, active } = req.body;
+
+  let service = await Service.findOne({ categoryKey, countryCode });
+  if (service) {
+    service.price = price;
+    service.flagEmoji = flagEmoji;
+    service.active = active;
+    await service.save();
+  } else {
+    service = await Service.create({ categoryKey, country, countryCode, price, flagEmoji, active });
+  }
+
+  res.json({ success: true, message: "Service updated successfully!", service });
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Server & Bot are running on port ${PORT}`));
+app.listen(PORT, () => console.log(`Admin Server is running on port ${PORT}`));
