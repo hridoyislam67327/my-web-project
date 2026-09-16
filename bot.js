@@ -1,21 +1,25 @@
+require('dotenv').config();
 const mongoose = require('mongoose');
 const { Telegraf, Markup } = require('telegraf');
 
 // Telegram Bot Token
-const BOT_TOKEN = process.env.BOT_TOKEN || 'YOUR_BOT_TOKEN_HERE';
+const BOT_TOKEN = process.env.BOT_TOKEN;
+if (!BOT_TOKEN) {
+  console.error("❌ BOT_TOKEN is missing in Environment Variables!");
+  process.exit(1);
+}
 const bot = new Telegraf(BOT_TOKEN);
 
-// MongoDB Connection for Bot
-const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/otp_bot_db';
+// MongoDB Connection
+const MONGO_URI = process.env.MONGO_URI;
+if (!MONGO_URI) {
+  console.error("❌ MONGO_URI is missing in Environment Variables!");
+  process.exit(1);
+}
 
-mongoose.connect(MONGO_URI, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true
-}).then(() => {
-  console.log('Database connected successfully in bot.js');
-}).catch(err => {
-  console.error('Bot Database connection error:', err);
-});
+mongoose.connect(MONGO_URI)
+  .then(() => console.log('✅ Database connected successfully in bot.js'))
+  .catch(err => console.error('❌ Bot Database connection error:', err));
 
 // Models
 const userSchema = new mongoose.Schema({
