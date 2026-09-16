@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
@@ -7,23 +8,22 @@ const app = express();
 app.use(cors());
 app.use(bodyParser.json());
 
-// MongoDB Connection
-const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/otp_bot_db';
+// MongoDB Connection (Deprecated options removed)
+const MONGO_URI = process.env.MONGO_URI;
 
-mongoose.connect(MONGO_URI, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true
-}).then(() => {
-  console.log('Database connected successfully in server.js');
-}).catch(err => {
-  console.error('Database connection error:', err);
-});
+if (!MONGO_URI) {
+  console.error('❌ MONGO_URI is missing in Environment Variables!');
+} else {
+  mongoose.connect(MONGO_URI)
+    .then(() => console.log('✅ Database connected successfully in server.js'))
+    .catch(err => console.error('❌ Database connection error:', err.message));
+}
 
-// --- Schemas & Models ---
+// --- Schemas & Models (Safe Model Registration) ---
 const settingsSchema = new mongoose.Schema({
   otpRate: { type: Number, default: 1.0 }
 });
-const Settings = mongoose.model('Settings', settingsSchema);
+const Settings = mongoose.models.Settings || mongoose.model('Settings', settingsSchema);
 
 const userSchema = new mongoose.Schema({
   telegramId: { type: String, unique: true, required: true },
@@ -32,7 +32,7 @@ const userSchema = new mongoose.Schema({
   status: { type: String, enum: ['Active', 'Banned', 'Working'], default: 'Active' },
   lastActive: { type: Date, default: Date.now }
 });
-const User = mongoose.model('User', userSchema);
+const User = mongoose.models.User || mongoose.model('User', userSchema);
 
 const numberRangeSchema = new mongoose.Schema({
   country: { type: String, required: true },
@@ -40,7 +40,15 @@ const numberRangeSchema = new mongoose.Schema({
   ranges: [String],
   status: { type: String, default: 'Active' }
 });
-const NumberRange = mongoose.model('NumberRange', numberRangeSchema);
+const NumberRange = mongoose.models.NumberRange || mongoose.model('NumberRange', numberRangeSchema);
+
+// --- Import & Start Telegram Bot ---
+try {
+  require('./bot');
+  console.log('🤖 Telegram Bot script loaded successfully.');
+} catch (botErr) {
+  console.error('❌ Failed to load bot.js:', botErr.message);
+}
 
 // --- Admin APIs ---
 app.get('/api/admin/stats', async (req, res) => {
@@ -203,4 +211,4 @@ app.get('/', (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Server is running on port ${PORT}`));
+app.listen(PORT, () => console.log(`🚀 Server is running on port ${PORT}`));
