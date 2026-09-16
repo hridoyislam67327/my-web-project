@@ -10,4 +10,5 @@ const serviceSchema = new mongoose.Schema({
   active: { type: Boolean, default: true }
 });
 
-module.exports = mongoose.model('Service', serviceSchema);
+// OverwriteModelError এড়াতে নিরাপদ এক্সপোর্ট
+module.exports = mongoose.models.Service || mongoose.model('Service', serviceSchema);
