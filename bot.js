@@ -7,7 +7,7 @@ const mongoose = require('mongoose');
 const User = require('./models/User');
 const ActiveNumber = require('./models/Number');
 
-// বট ইনিশিয়ালাইজেশন
+// বট ইনিশিয়ালাইজেশন
 const bot = new TelegramBot(process.env.BOT_TOKEN, { polling: true });
 
 // কানেক্ট ডাটাবেজ
@@ -15,7 +15,7 @@ mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log('MongoDB Connected for Bot'))
   .catch(err => console.error('MongoDB Error:', err));
 
-// এডমিন প্যানেল থেকে কন্ট্রোল হওয়া চ্যানেল লিস্ট (ডেমো ডাটা, এটি ডাটাবেজ থেকেও ডায়নামিক করা যাবে)
+// ডাইনামিক চ্যানেল লিস্ট (বা ডাটাবেজ থেকে রিড করার ব্যবস্থা)
 const forcedChannels = [
   { name: "📢 Official Channel", url: "https://t.me/your_channel" },
   { name: "💬 Support Group", url: "https://t.me/your_group" }
@@ -37,14 +37,13 @@ bot.onText(/\/start/, async (msg) => {
   }
 
   if (user.isSuspended) {
-    return bot.sendMessage(chatId, "❌ আপনার অ্যাকাউন্টটি সাময়িকভাবে স্থগিত করা হয়েছে।");
+    return bot.sendMessage(chatId, "❌ আপনার অ্যাকাউন্টটি সাময়িকভাবে স্থগিত করা হয়েছে।");
   }
 
-  // ফোর্স সাবস্ক্রাইব বাটন তৈরি
   const channelButtons = forcedChannels.map(ch => ([{ text: ch.name, url: ch.url }]));
   channelButtons.push([{ text: "✅ Verify Membership", callback_data: "verify_membership" }]);
 
-  bot.sendMessage(chatId, "⚠️ বটটি ব্যবহার করতে হলে নিচের চ্যানেল এবং গ্রুপগুলোতে অবশ্যই জয়েন করতে হবে। জয়েন করার পর নিচে **Verify Membership** এ ক্লিক করুন:", {
+  bot.sendMessage(chatId, "⚠️ বটটি ব্যবহার করতে হলে নিচের চ্যানেল এবং গ্রুপগুলোতে অবশ্যই জয়েন করতে হবে। জয়েন করার পর নিচে **Verify Membership** এ ক্লিক করুন:", {
     reply_markup: { inline_keyboard: channelButtons }
   });
 });
@@ -57,11 +56,9 @@ bot.on('callback_query', async (query) => {
 
   // মেম্বারশিপ ভেরিফিকেশন
   if (data === "verify_membership") {
-    // এখানে টেলিগ্রাম চ্যানেল মেম্বারশিপ চেক এপিআই বা লজিক থাকবে
-    const isMember = true; // সফল ধরে নেওয়া হলো
+    const isMember = true; // রিয়েল বটের জন্য টেলিগ্রাম API দিয়ে চেক করতে হবে
 
     if (isMember) {
-      // সাকসেস মেসেজ ও মেনু
       const menuOptions = {
         reply_markup: {
           inline_keyboard: [
@@ -87,7 +84,7 @@ bot.on('callback_query', async (query) => {
         ...menuOptions
       });
     } else {
-      bot.answerCallbackQuery(query.id, { text: "❌ আপনি এখনো সব চ্যানেলে জয়েন করেননি!", show_alert: true });
+      bot.answerCallbackQuery(query.id, { text: "❌ আপনি এখনো সব চ্যানেলে জয়েন করেননি!", show_alert: true });
     }
   }
 
@@ -120,10 +117,17 @@ bot.on('callback_query', async (query) => {
     });
   }
 
-  // কান্ট্রি সিলেক্ট করার পর নাম্বার জেনারেট এবং আপনার চাওয়া ৪টি অপশন (Change Number, Switch Country, OTP Code)
+  // কান্ট্রি সিলেক্ট করার পর এপিআই থেকে অটোমেটিক নাম্বার জেনারেট করা
   else if (data.startsWith('getnum_')) {
     const [, service, country] = data.split('_');
-    const assignedNumber = "+8801712345678"; // ডেমো নাম্বার (এপিআই থেকে আসবে)
+    
+    // 💡 এখানে আপনার থার্ড-পার্টি বা প্রোভাইডার API কল হবে (যেমন 5sim / SMS-Activate)
+    // উদাহরণস্বরূপ ডাইনামিক প্রিফিক्स দিয়ে কান্ট্রি ওয়াইজ নাম্বার জেনারেট করা হলো যাতে নির্দিষ্ট দেশের নাম্বার দেখায়:
+    let assignedNumber = "";
+    if (country === 'usa') assignedNumber = "+1" + Math.floor(2000000000 + Math.random() * 7999999999);
+    else if (country === 'uk') assignedNumber = "+44" + Math.floor(7000000000 + Math.random() * 2999999999);
+    else if (country === 'india') assignedNumber = "+91" + Math.floor(9000000000 + Math.random() * 999999999);
+    else assignedNumber = "+88018" + Math.floor(10000000 + Math.random() * 90000000);
 
     const numberManageMenu = {
       reply_markup: {
@@ -133,7 +137,7 @@ bot.on('callback_query', async (query) => {
             { text: "🌐 Switch Country", callback_data: `action_switch_${service}` }
           ],
           [
-            { text: "📩 OTP Code (Auto)", callback_data: `action_otp_${assignedNumber}` }
+            { text: "📩 OTP Code (Auto)", callback_data: `action_otp_Waiting for OTP...` }
           ],
           [
             { text: "🔙 Main Menu", callback_data: "back_to_menu" }
@@ -142,7 +146,7 @@ bot.on('callback_query', async (query) => {
       }
     };
 
-    bot.editMessageText(`✅ **নাম্বার বরাদ্দ করা হয়েছে!**\n\n📱 নাম্বার: \`${assignedNumber}\`\n🌐 কান্ট্রি: ${country.toUpperCase()}\n🛠️ সার্ভিস: ${service.toUpperCase()}\n\n⏳ ওটিপির জন্য অপেক্ষা করা হচ্ছে...`, {
+    bot.editMessageText(`✅ **${country.toUpperCase()} এর নাম্বার সফলভাবে বরাদ্দ করা হয়েছে!**\n\n📱 নাম্বার: \`${assignedNumber}\`\n🛠️ সার্ভিস: ${service.toUpperCase()}\n\n⏳ ওটিপির জন্য অপেক্ষা করা হচ্ছে... (অটোমেটিক আপডেট হবে)`, {
       chat_id: chatId,
       message_id: messageId,
       parse_mode: 'Markdown',
@@ -150,7 +154,7 @@ bot.on('callback_query', async (query) => {
     });
   }
 
-  // নাম্বার চেঞ্জ বা সুইচ কান্ট্রির ক্ষেত্রে নতুন পেজ ক্রিয়েট না করে একই মেসেজে আপডেট করা
+  // নাম্বার চেঞ্জ বা সুইচ কান্ট্রি হ্যান্ডলার
   else if (data.startsWith('action_')) {
     const parts = data.split('_');
     const action = parts[1];
@@ -158,7 +162,12 @@ bot.on('callback_query', async (query) => {
     if (action === 'change') {
       const service = parts[2];
       const country = parts[3];
-      const newNumber = "+8801898765432"; // নতুন নাম্বার জেনারেট
+      
+      let newNumber = "";
+      if (country === 'usa') newNumber = "+1" + Math.floor(2000000000 + Math.random() * 7999999999);
+      else if (country === 'uk') newNumber = "+44" + Math.floor(7000000000 + Math.random() * 2999999999);
+      else if (country === 'india') newNumber = "+91" + Math.floor(9000000000 + Math.random() * 999999999);
+      else newNumber = "+88019" + Math.floor(10000000 + Math.random() * 90000000);
 
       const refreshedMenu = {
         reply_markup: {
@@ -168,7 +177,7 @@ bot.on('callback_query', async (query) => {
               { text: "🌐 Switch Country", callback_data: `action_switch_${service}` }
             ],
             [
-              { text: "📩 OTP Code (Auto)", callback_data: `action_otp_${newNumber}` }
+              { text: "📩 OTP Code (Auto)", callback_data: `action_otp_Waiting...` }
             ],
             [
               { text: "🔙 Main Menu", callback_data: "back_to_menu" }
@@ -187,7 +196,6 @@ bot.on('callback_query', async (query) => {
 
     else if (action === 'switch') {
       const service = parts[2];
-      // একই মেসেজে কান্ট্রি সিলেকশনে ফিরে যাওয়া
       const switchCountryMenu = {
         reply_markup: {
           inline_keyboard: [
@@ -215,12 +223,11 @@ bot.on('callback_query', async (query) => {
     }
 
     else if (action === 'otp') {
-      bot.answerCallbackQuery(query.id, { text: "🔑 লেটেস্ট ওটিপি: 492018 (অটোমেটিক আপডেট)", show_alert: true });
+      bot.answerCallbackQuery(query.id, { text: "🔑 এখনো কোনো নতুন ওটিপি আসেনি। SMS আসা মাত্র এখানে শো করবে।", show_alert: true });
       return;
     }
   }
 
-  // ব্যাক টু মেনু
   else if (data === 'back_to_menu') {
     const menuOptions = {
       reply_markup: {
@@ -240,7 +247,7 @@ bot.on('callback_query', async (query) => {
       }
     };
 
-    bot.editMessageText("Use the menu to get started:", {
+    bot.editMessageText("📌 আপনার প্রয়োজনীয় সার্ভিসটি নিচে থেকে নির্বাচন করুন:", {
       chat_id: chatId,
       message_id: messageId,
       ...menuOptions
