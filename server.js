@@ -13,6 +13,10 @@ app.set('view engine', 'ejs');
 app.use(express.urlencoded({ extended: true }));
 app.use(session({ secret: 'secret', resave: false, saveUninitialized: true }));
 
+app.get('/', (req, res) => {
+  res.redirect('/login');
+});
+
 app.get('/login', (req, res) => {
   res.send('<form method="POST" action="/login"><input type="password" name="password"/><button type="submit">Login</button></form>');
 });
