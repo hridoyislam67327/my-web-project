@@ -34,23 +34,19 @@ bot.onText(/\/start/, async (msg) => {
   sendMainMenu(chatId);
 });
 
-// ২. মেইন মেনু (প্যানেল থেকে সার্ভিস ফেচ করা)
+// ২. মেইন মেনু (.env এর API_URL এবং API_KEY ব্যবহার করে সার্ভিস ফেচ করা)
 async function sendMainMenu(chatId, messageId = null) {
   try {
-    const response = await axios.get(`${process.env.API_URL}`, {
+    const response = await axios.get(process.env.API_URL, {
       params: {
         api_key: process.env.API_KEY,
+        key: process.env.API_KEY,
         action: 'services'
       }
     });
 
-    // প্যানেলের রেসপন্স ফরম্যাট হ্যান্ডেল করার নিরাপদ উপায়
     const servicesData = response.data.services || response.data.data || response.data;
     const serviceKeys = Array.isArray(servicesData) ? servicesData : Object.keys(servicesData);
-
-    if (!serviceKeys || serviceKeys.length === 0) {
-      throw new Error("No services found from API");
-    }
 
     const keyboard = [];
     let row = [];
@@ -83,7 +79,7 @@ async function sendMainMenu(chatId, messageId = null) {
     }
   } catch (error) {
     console.error("Panel API Error:", error.response?.data || error.message);
-    const errorText = "❌ প্যানেল থেকে সার্ভিস লোড করতে সমস্যা হয়েছে। `.env` ফাইলের `API_URL` এবং `API_KEY` সঠিক আছে কি না চেক করুন।";
+    const errorText = "❌ প্যানেল থেকে সার্ভিস লোড করতে সমস্যা হয়েছে।";
     if (messageId) {
       bot.editMessageText(errorText, { chat_id: chatId, message_id: messageId });
     } else {
@@ -119,9 +115,10 @@ bot.on('callback_query', async (query) => {
       const service = data.split('_')[1];
       const telegramId = query.from.id.toString();
 
-      const numRes = await axios.get(`${process.env.API_URL}`, {
+      const numRes = await axios.get(process.env.API_URL, {
         params: {
           api_key: process.env.API_KEY,
+          key: process.env.API_KEY,
           action: 'getNumber',
           service: service
         }
@@ -157,9 +154,10 @@ bot.on('callback_query', async (query) => {
 
     else if (data.startsWith('checkotp_')) {
       const orderId = data.split('_')[1];
-      const statusRes = await axios.get(`${process.env.API_URL}`, {
+      const statusRes = await axios.get(process.env.API_URL, {
         params: {
           api_key: process.env.API_KEY,
+          key: process.env.API_KEY,
           action: 'getStatus',
           id: orderId
         }
