@@ -34,24 +34,27 @@ bot.onText(/\/start/, async (msg) => {
   sendMainMenu(chatId);
 });
 
-// ২. মেইন মেনু (প্যানেল থেকে সার্ভিস ফেচ করা)
+// ২. মেইন মেনু (Vortex প্যানেলের জন্য সঠিক প্যারামিটার দিয়ে সার্ভিস ফেচ করা)
 async function sendMainMenu(chatId, messageId = null) {
   try {
+    // Vortex প্যানেলে প্রাইস বা সার্ভিস লিস্ট আনার জন্য সাধারণত action=getPrices বা action=services ব্যবহৃত হয়
     const response = await axios.get(process.env.API_URL, {
       params: {
         api_key: process.env.API_KEY,
         key: process.env.API_KEY,
-        action: 'services'
+        action: 'getPrices' 
       }
     });
 
-    const servicesData = response.data.services || response.data.data || response.data;
-    const serviceKeys = Array.isArray(servicesData) ? servicesData : Object.keys(servicesData);
+    const data = response.data;
+    // Vortex প্যানেলের রেসপন্স অবজেক্ট বা অ্যারে হতে পারে
+    const servicesObj = data.services || data.data || data;
+    const serviceKeys = Array.isArray(servicesObj) ? servicesObj : Object.keys(servicesObj);
 
     const keyboard = [];
     let row = [];
 
-    serviceKeys.slice(0, 10).forEach((srv, index) => {
+    serviceKeys.slice(0, 12).forEach((srv, index) => {
       const srvName = typeof srv === 'string' ? srv : (srv.name || srv.code || srv.id);
       if (srvName) {
         row.push({ text: `🔹 ${String(srvName).toUpperCase()}`, callback_data: `service_${srvName}` });
@@ -65,21 +68,21 @@ async function sendMainMenu(chatId, messageId = null) {
     const menuOptions = { reply_markup: { inline_keyboard: keyboard } };
 
     if (messageId) {
-      bot.editMessageText("📌 আপনার প্যানেল থেকে উপলব্ধ সার্ভিসসমূহ:", {
+      bot.editMessageText("📌 Vortex প্যানেল থেকে উপলব্ধ সার্ভিসসমূহ:", {
         chat_id: chatId,
         message_id: messageId,
         parse_mode: 'Markdown',
         ...menuOptions
       });
     } else {
-      bot.sendMessage(chatId, "📌 আপনার প্যানেল থেকে উপলব্ধ সার্ভিসসমূহ:", {
+      bot.sendMessage(chatId, "📌 Vortex প্যানেল থেকে উপলব্ধ সার্ভিসসমূহ:", {
         parse_mode: 'Markdown',
         ...menuOptions
       });
     }
   } catch (error) {
-    console.error("Panel API Error:", error.response?.data || error.message);
-    const errorText = "❌ প্যানেল থেকে সার্ভিস লোড করতে সমস্যা হয়েছে।";
+    console.error("Vortex Panel API Error:", error.response?.data || error.message);
+    const errorText = "❌ প্যানেল থেকে সার্ভিস লোড করতে সমস্যা হয়েছে। অনুগ্রহ করে এপিআই লিংক চেক করুন।";
     if (messageId) {
       bot.editMessageText(errorText, { chat_id: chatId, message_id: messageId });
     } else {
@@ -115,6 +118,7 @@ bot.on('callback_query', async (query) => {
       const service = data.split('_')[1];
       const telegramId = query.from.id.toString();
 
+      // Vortex প্যানেল থেকে নাম্বার নেওয়ার রিকোয়েস্ট
       const numRes = await axios.get(process.env.API_URL, {
         params: {
           api_key: process.env.API_KEY,
@@ -128,7 +132,7 @@ bot.on('callback_query', async (query) => {
       const orderId = numRes.data.id || numRes.data.orderId || numRes.data.access_id || "12345";
 
       if (!phoneNumber) {
-        return bot.answerCallbackQuery(query.id, { text: "⚠️ এই মুহূর্তে কোনো নাম্বার খালি নেই!", show_alert: true });
+        return bot.answerCallbackQuery(query.id, { text: "⚠️ এই মুহূর্তে এই সার্ভিসের কোনো নাম্বার খালি নেই!", show_alert: true });
       }
 
       await ActiveNumber.create({
@@ -171,7 +175,7 @@ bot.on('callback_query', async (query) => {
     }
   } catch (err) {
     console.error("Callback Error:", err.message);
-    bot.answerCallbackQuery(query.id, { text: "❌ প্রসেসটি সম্পন্ন করতে সমস্যা হয়েছে!", show_alert: true });
+    bot.answerCallbackQuery(query.id, { text: "❌ প্যানেল থেকে প্রসেস সম্পন্ন করতে সমস্যা হয়েছে!", show_alert: true });
   }
 
   try {
