@@ -34,32 +34,35 @@ bot.onText(/\/start/, async (msg) => {
   sendMainMenu(chatId);
 });
 
-// ২. মেইন মেনু (আপনার প্যানেল থেকে সার্ভিস ফেচ করার সঠিক পদ্ধতি)
+// ২. মেইন মেনু (প্যানেল থেকে সার্ভিস ফেচ করা)
 async function sendMainMenu(chatId, messageId = null) {
   try {
-    // সরাসরি .env এর API_URL এবং API_KEY দিয়ে রিকোয়েস্ট পাঠানো
     const response = await axios.get(`${process.env.API_URL}`, {
       params: {
         api_key: process.env.API_KEY,
-        action: 'services' // বেশিরভাগ প্যানেলের স্ট্যান্ডার্ড অ্যাকশন
+        action: 'services'
       }
     });
 
-    // প্যানেল থেকে ডাটা অ্যারে বা অবজেক্ট আকারে আসতে পারে
-    const servicesData = response.data.services || response.data;
-    
+    // প্যানেলের রেসপন্স ফরম্যাট হ্যান্ডেল করার নিরাপদ উপায়
+    const servicesData = response.data.services || response.data.data || response.data;
+    const serviceKeys = Array.isArray(servicesData) ? servicesData : Object.keys(servicesData);
+
+    if (!serviceKeys || serviceKeys.length === 0) {
+      throw new Error("No services found from API");
+    }
+
     const keyboard = [];
     let row = [];
 
-    // যদি ডেটা অবজেক্ট বা অ্যারে হয় সে অনুযায়ী হ্যান্ডেল করা
-    const serviceKeys = Array.isArray(servicesData) ? servicesData : Object.keys(servicesData);
-
     serviceKeys.slice(0, 10).forEach((srv, index) => {
-      const srvName = typeof srv === 'string' ? srv : (srv.name || srv.code);
-      row.push({ text: `🔹 ${srvName.toUpperCase()}`, callback_data: `service_${srvName}` });
-      if (row.length === 2 || index === serviceKeys.length - 1) {
-        keyboard.push(row);
-        row = [];
+      const srvName = typeof srv === 'string' ? srv : (srv.name || srv.code || srv.id);
+      if (srvName) {
+        row.push({ text: `🔹 ${String(srvName).toUpperCase()}`, callback_data: `service_${srvName}` });
+        if (row.length === 2 || index === serviceKeys.length - 1) {
+          keyboard.push(row);
+          row = [];
+        }
       }
     });
 
@@ -80,7 +83,7 @@ async function sendMainMenu(chatId, messageId = null) {
     }
   } catch (error) {
     console.error("Panel API Error:", error.response?.data || error.message);
-    const errorText = "❌ প্যানেল থেকে সার্ভিস লোড করতে সমস্যা হয়েছে। `.env` ফাইলের `API_URL` এবং `API_KEY` সঠিক আছে কি না চেক করুন।";
+    const errorText = "❌ প্যানেল থেকে সার্ভিস লোড করতে সমস্যা হয়েছে। `.env` ফাইলের `API_URL` এবং `API_KEY` সঠিক আছে কি না চেক করুন।";
     if (messageId) {
       bot.editMessageText(errorText, { chat_id: chatId, message_id: messageId });
     } else {
@@ -95,18 +98,9 @@ bot.on('callback_query', async (query) => {
   const messageId = query.message.message_id;
   const data = query.data;
 
-  if (data.startsWith('service_')) {
-    const service = data.split('_')[1];
-
-    try {
-      // প্যানেল থেকে উক্ত সার্ভিসের জন্য কান্ট্রি বা প্রাইস লিস্ট আনা
-      const res = await axios.get(`${process.env.API_URL}`, {
-        params: {
-          api_key: process.env.API_KEY,
-          action: 'prices',
-          service: service
-        }
-      });
+  try {
+    if (data.startsWith('service_')) {
+      const service = data.split('_')[1];
 
       bot.editMessageText(`📌 সার্ভিস: **${service.toUpperCase()}**\n\nনাম্বার নিতে নিচের বাটনে ক্লিক করুন:`, {
         chat_id: chatId,
@@ -119,17 +113,12 @@ bot.on('callback_query', async (query) => {
           ]
         }
       });
-    } catch (err) {
-      bot.answerCallbackQuery(query.id, { text: "❌ প্যানেল থেকে কান্ট্রি লোড করা যায়নি!", show_alert: true });
     }
-  }
 
-  else if (data.startsWith('getnum_')) {
-    const service = data.split('_')[1];
-    const telegramId = query.from.id.toString();
+    else if (data.startsWith('getnum_')) {
+      const service = data.split('_')[1];
+      const telegramId = query.from.id.toString();
 
-    try {
-      // প্যানেল থেকে সরাসরি রিয়েল নাম্বার নেওয়ার এপিআই কল
       const numRes = await axios.get(`${process.env.API_URL}`, {
         params: {
           api_key: process.env.API_KEY,
@@ -138,8 +127,8 @@ bot.on('callback_query', async (query) => {
         }
       });
 
-      const phoneNumber = numRes.data.number || numRes.data.phone;
-      const orderId = numRes.data.id || numRes.data.orderId || "12345";
+      const phoneNumber = numRes.data.number || numRes.data.phone || numRes.data.access_number;
+      const orderId = numRes.data.id || numRes.data.orderId || numRes.data.access_id || "12345";
 
       if (!phoneNumber) {
         return bot.answerCallbackQuery(query.id, { text: "⚠️ এই মুহূর্তে কোনো নাম্বার খালি নেই!", show_alert: true });
@@ -153,7 +142,7 @@ bot.on('callback_query', async (query) => {
         otpCode: "Waiting..."
       });
 
-      bot.editMessageText(`✅ **সফলভাবে নাম্বার নেওয়া হয়েছে!**\n\n📱 নাম্বার: \`${phoneNumber}\``, {
+      bot.editMessageText(`✅ **সফলভাবে নাম্বার নেওয়া হয়েছে!**\n\n📱 নাম্বার: \`${phoneNumber}\``, {
         chat_id: chatId,
         message_id: messageId,
         parse_mode: 'Markdown',
@@ -164,15 +153,10 @@ bot.on('callback_query', async (query) => {
           ]
         }
       });
-
-    } catch (error) {
-      bot.answerCallbackQuery(query.id, { text: "❌ প্যানেল থেকে নাম্বার জেনারেট হয়নি!", show_alert: true });
     }
-  }
 
-  else if (data.startsWith('checkotp_')) {
-    const orderId = data.split('_')[1];
-    try {
+    else if (data.startsWith('checkotp_')) {
+      const orderId = data.split('_')[1];
       const statusRes = await axios.get(`${process.env.API_URL}`, {
         params: {
           api_key: process.env.API_KEY,
@@ -180,17 +164,19 @@ bot.on('callback_query', async (query) => {
           id: orderId
         }
       });
-      const code = statusRes.data.code || statusRes.data.otp || "কোড এখনো আসেনি";
+      const code = statusRes.data.code || statusRes.data.otp || statusRes.data.sms || "কোড এখনো আসেনি";
       bot.answerCallbackQuery(query.id, { text: `🔑 ওটিপি কোড: ${code}`, show_alert: true });
-    } catch (err) {
-      bot.answerCallbackQuery(query.id, { text: "⚠️ ওটিপি চেক করতে সমস্যা হয়েছে।", show_alert: true });
     }
-    return;
+
+    else if (data === 'back_to_menu') {
+      sendMainMenu(chatId, messageId);
+    }
+  } catch (err) {
+    console.error("Callback Error:", err.message);
+    bot.answerCallbackQuery(query.id, { text: "❌ প্রসেসটি সম্পন্ন করতে সমস্যা হয়েছে!", show_alert: true });
   }
 
-  else if (data === 'back_to_menu') {
-    sendMainMenu(chatId, messageId);
-  }
-
-  bot.answerCallbackQuery(query.id);
+  try {
+    await bot.answerCallbackQuery(query.id);
+  } catch (e) {}
 });
