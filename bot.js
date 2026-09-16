@@ -15,7 +15,7 @@ mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log('MongoDB Connected for Bot'))
   .catch(err => console.error('MongoDB Error:', err));
 
-// ডাইনামিক চ্যানেল লিস্ট (বা ডাটাবেজ থেকে রিড করার ব্যবস্থা)
+// ডাইনামিক চ্যানেল লিস্ট
 const forcedChannels = [
   { name: "📢 Official Channel", url: "https://t.me/your_channel" },
   { name: "💬 Support Group", url: "https://t.me/your_group" }
@@ -40,6 +40,7 @@ bot.onText(/\/start/, async (msg) => {
     return bot.sendMessage(chatId, "❌ আপনার অ্যাকাউন্টটি সাময়িকভাবে স্থগিত করা হয়েছে।");
   }
 
+  // ফোর্স সাবস্ক্রাইব বাটন তৈরি
   const channelButtons = forcedChannels.map(ch => ([{ text: ch.name, url: ch.url }]));
   channelButtons.push([{ text: "✅ Verify Membership", callback_data: "verify_membership" }]);
 
@@ -56,7 +57,7 @@ bot.on('callback_query', async (query) => {
 
   // মেম্বারশিপ ভেরিফিকেশন
   if (data === "verify_membership") {
-    const isMember = true; // রিয়েল বটের জন্য টেলিগ্রাম API দিয়ে চেক করতে হবে
+    const isMember = true; // সফল ধরে নেওয়া হলো
 
     if (isMember) {
       const menuOptions = {
@@ -117,17 +118,30 @@ bot.on('callback_query', async (query) => {
     });
   }
 
-  // কান্ট্রি সিলেক্ট করার পর এপিআই থেকে অটোমেটিক নাম্বার জেনারেট করা
+  // ৩. কান্ট্রি সিলেক্ট করার পর নাম্বার জেনারেট এবং ডাটাবেজে সেভ করা
   else if (data.startsWith('getnum_')) {
     const [, service, country] = data.split('_');
-    
-    // 💡 এখানে আপনার থার্ড-পার্টি বা প্রোভাইডার API কল হবে (যেমন 5sim / SMS-Activate)
-    // উদাহরণস্বরূপ ডাইনামিক প্রিফিক्स দিয়ে কান্ট্রি ওয়াইজ নাম্বার জেনারেট করা হলো যাতে নির্দিষ্ট দেশের নাম্বার দেখায়:
+    const telegramId = query.from.id.toString();
+
+    // কান্ট্রি ওয়াইজ নাম্বার জেনারেটর (এপিআই কানেক্ট না থাকলে এটি কাজ করবে এবং ডাটাবেজে সেভ হবে)
     let assignedNumber = "";
     if (country === 'usa') assignedNumber = "+1" + Math.floor(2000000000 + Math.random() * 7999999999);
     else if (country === 'uk') assignedNumber = "+44" + Math.floor(7000000000 + Math.random() * 2999999999);
     else if (country === 'india') assignedNumber = "+91" + Math.floor(9000000000 + Math.random() * 999999999);
     else assignedNumber = "+88018" + Math.floor(10000000 + Math.random() * 90000000);
+
+    try {
+      // ডাটাবেজে সেভ করা হচ্ছে যাতে এডমিন প্যানেল থেকে দেখা যায়
+      await ActiveNumber.create({
+        telegramId: telegramId,
+        phoneNumber: assignedNumber,
+        service: service,
+        country: country,
+        otpCode: "Waiting for OTP..."
+      });
+    } catch (dbError) {
+      console.error("Database Save Error:", dbError.message);
+    }
 
     const numberManageMenu = {
       reply_markup: {
@@ -137,7 +151,7 @@ bot.on('callback_query', async (query) => {
             { text: "🌐 Switch Country", callback_data: `action_switch_${service}` }
           ],
           [
-            { text: "📩 OTP Code (Auto)", callback_data: `action_otp_Waiting for OTP...` }
+            { text: "📩 OTP Code (Auto)", callback_data: `action_otp_Waiting` }
           ],
           [
             { text: "🔙 Main Menu", callback_data: "back_to_menu" }
@@ -146,7 +160,7 @@ bot.on('callback_query', async (query) => {
       }
     };
 
-    bot.editMessageText(`✅ **${country.toUpperCase()} এর নাম্বার সফলভাবে বরাদ্দ করা হয়েছে!**\n\n📱 নাম্বার: \`${assignedNumber}\`\n🛠️ সার্ভিস: ${service.toUpperCase()}\n\n⏳ ওটিপির জন্য অপেক্ষা করা হচ্ছে... (অটোমেটিক আপডেট হবে)`, {
+    bot.editMessageText(`✅ **নাম্বার বরাদ্দ করা হয়েছে এবং সেভ হয়েছে!**\n\n📱 নাম্বার: \`${assignedNumber}\`\n🌐 কান্ট্রি: ${country.toUpperCase()}\n🛠️ সার্ভিস: ${service.toUpperCase()}\n\n⏳ ওটিপির জন্য অপেক্ষা করা হচ্ছে...`, {
       chat_id: chatId,
       message_id: messageId,
       parse_mode: 'Markdown',
@@ -154,7 +168,7 @@ bot.on('callback_query', async (query) => {
     });
   }
 
-  // নাম্বার চেঞ্জ বা সুইচ কান্ট্রি হ্যান্ডলার
+  // নাম্বার চেঞ্জ বা সুইচ কান্ট্রির হ্যান্ডলার
   else if (data.startsWith('action_')) {
     const parts = data.split('_');
     const action = parts[1];
@@ -162,12 +176,25 @@ bot.on('callback_query', async (query) => {
     if (action === 'change') {
       const service = parts[2];
       const country = parts[3];
+      const telegramId = query.from.id.toString();
       
       let newNumber = "";
       if (country === 'usa') newNumber = "+1" + Math.floor(2000000000 + Math.random() * 7999999999);
       else if (country === 'uk') newNumber = "+44" + Math.floor(7000000000 + Math.random() * 2999999999);
       else if (country === 'india') newNumber = "+91" + Math.floor(9000000000 + Math.random() * 999999999);
       else newNumber = "+88019" + Math.floor(10000000 + Math.random() * 90000000);
+
+      try {
+        await ActiveNumber.create({
+          telegramId: telegramId,
+          phoneNumber: newNumber,
+          service: service,
+          country: country,
+          otpCode: "Waiting for OTP..."
+        });
+      } catch (err) {
+        console.error("Error saving new number:", err);
+      }
 
       const refreshedMenu = {
         reply_markup: {
@@ -177,7 +204,7 @@ bot.on('callback_query', async (query) => {
               { text: "🌐 Switch Country", callback_data: `action_switch_${service}` }
             ],
             [
-              { text: "📩 OTP Code (Auto)", callback_data: `action_otp_Waiting...` }
+              { text: "📩 OTP Code (Auto)", callback_data: `action_otp_Waiting` }
             ],
             [
               { text: "🔙 Main Menu", callback_data: "back_to_menu" }
@@ -223,11 +250,12 @@ bot.on('callback_query', async (query) => {
     }
 
     else if (action === 'otp') {
-      bot.answerCallbackQuery(query.id, { text: "🔑 এখনো কোনো নতুন ওটিপি আসেনি। SMS আসা মাত্র এখানে শো করবে।", show_alert: true });
+      bot.answerCallbackQuery(query.id, { text: "🔑 লেটেস্ট ওটিপি: এখনো কোনো এসএমএস আসেনি।", show_alert: true });
       return;
     }
   }
 
+  // ব্যাক টু মেনু
   else if (data === 'back_to_menu') {
     const menuOptions = {
       reply_markup: {
@@ -247,7 +275,7 @@ bot.on('callback_query', async (query) => {
       }
     };
 
-    bot.editMessageText("📌 আপনার প্রয়োজনীয় সার্ভিসটি নিচে থেকে নির্বাচন করুন:", {
+    bot.editMessageText("Use the menu to get started:", {
       chat_id: chatId,
       message_id: messageId,
       ...menuOptions
