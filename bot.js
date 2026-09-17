@@ -33,7 +33,7 @@ if (!PANEL_API_KEY) {
 const bot = new Telegraf(BOT_TOKEN);
 
 // ==================================================
-// Panel API
+// Panel API = process.env.PANEL_API_KEY;
 // ==================================================
 
 const panelAPI = axios.create({
@@ -90,8 +90,8 @@ async function getOrCreateUser(ctx) {
 
 function mainMenu() {
   return Markup.keyboard([
-    ['🌍 কান্ট্রি ও নাম্বার নিন', '💰 আমার ব্যালেন্স'],
-    ['📊 কাজের স্ট্যাটাস']
+    ['🌍 GET NUMBER', '💰 MY BALANCHE'],
+    ['📊 WORK STATUS']
   ]).resize();
 }
 
