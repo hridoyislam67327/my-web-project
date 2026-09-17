@@ -604,7 +604,7 @@ bot.action(
 // ==================================================
 
 bot.hears(
-  '💰 আমার ব্যালেন্স',
+  '💰 MY BALANCHE',
   async (ctx) => {
     try {
       const user = await getOrCreateUser(ctx);
@@ -624,8 +624,8 @@ bot.hears(
         Number(settings?.otpRate || 0);
 
       await ctx.reply(
-        `💳 আপনার ব্যালেন্স: ৳${balance.toFixed(2)}\n` +
-        `💵 পার-ওটিপি রেট: ৳${rate.toFixed(2)}`
+        `💳 আপনার ব্যালেন্স: ৳${balance.toFixed(1)}\n` +
+        `💵 পার-ওটিপি রেট: ৳${rate.toFixed(1)}`
       );
 
     } catch (error) {
@@ -646,7 +646,7 @@ bot.hears(
 // ==================================================
 
 bot.hears(
-  '📊 কাজের স্ট্যাটাস',
+  '📊 WORK STATUS',
   async (ctx) => {
     try {
       const user = await getOrCreateUser(ctx);
@@ -658,7 +658,7 @@ bot.hears(
       }
 
       await ctx.reply(
-        `📊 কাজের স্ট্যাটাস\n\n` +
+        `📊 WORK STATUS\n\n` +
         `👤 Status: ${user.status || 'Active'}\n` +
         `💰 Balance: ৳${Number(user.balance || 0).toFixed(2)}\n` +
         `🕐 Last Active: ${user.lastActive ? user.lastActive.toLocaleString() : 'N/A'}`
