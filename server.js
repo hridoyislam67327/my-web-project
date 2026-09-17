@@ -5,6 +5,15 @@ const bodyParser = require('body-parser');
 const axios = require('axios');
 require('dotenv').config();
 
+// --- গ্লোবাল এরর হ্যান্ডলার (নেটওয়ার্ক বা ফেচ এরর ক্র্যাশ রোধ করতে) ---
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught Exception thrown:', error);
+});
+
 const app = express();
 app.use(cors());
 app.use(bodyParser.json());
@@ -61,7 +70,11 @@ app.post('/api/admin/settings', async (req, res) => {
 });
 
 // Start Telegram Bot
-require('./bot');
+try {
+  require('./bot');
+} catch (err) {
+  console.error('Telegram bot failed to start:', err.message);
+}
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
