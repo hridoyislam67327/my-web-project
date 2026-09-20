@@ -240,7 +240,7 @@ if not TOKEN:
 BASE_URL = f"https://api.telegram.org/bot{TOKEN}"
 FILE_URL = f"https://api.telegram.org/file/bot{TOKEN}/"
 
-OWNER_ID = 6376272882773637
+OWNER_ID = 7621172297
 BOT_USERNAME = ""
 
 # ==========================================
