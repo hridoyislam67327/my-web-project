@@ -233,14 +233,14 @@ local_ops = type("LocalOperations", (), {
 })
 
 # Config
-TOKEN = "8633220431:AAELSvvYsIcOOYhmwdH9uoO4gR3kw2bv-VA".strip()
+TOKEN = "8970447056:AAF0tbAOJiaahVOXniMwflAthwask6JJsho-VA".strip()
 if not TOKEN:
     raise SystemExit("❌ BOT_TOKEN not set!")
 
 BASE_URL = f"https://api.telegram.org/bot{TOKEN}"
 FILE_URL = f"https://api.telegram.org/file/bot{TOKEN}/"
 
-OWNER_ID = 8037760547
+OWNER_ID = 6376272882773637
 BOT_USERNAME = ""
 
 # ==========================================
