@@ -233,7 +233,7 @@ local_ops = type("LocalOperations", (), {
 })
 
 # Config
-TOKEN = "8834758976:AAERC_TFMX72xuUDZR_F5VzMrRNLo1nXqK0".strip()
+TOKEN =  os.environ.get("BOT_TOKEN", "").strip()
 if not TOKEN:
     raise SystemExit("❌ BOT_TOKEN not set!")
 
